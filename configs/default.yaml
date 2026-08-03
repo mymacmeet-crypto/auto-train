@@ -1,0 +1,159 @@
+# =============================================================================
+# autotrain — default configuration
+#
+# Every value here is optional; anything omitted falls back to the field
+# default declared in src/autotrain/utils/config.py. Override per-run with:
+#
+#   autotrain https://example.com --config configs/mysite.yaml
+#   autotrain https://example.com --set crawler.max_pages=500
+#
+# =============================================================================
+
+# ── Phase 1-2 · crawling ─────────────────────────────────────────────────────
+crawler:
+  respect_robots: true
+  max_pages: 10000
+  max_depth: 12
+  concurrency: 8
+  delay_seconds: 0.0        # per-host politeness delay; robots Crawl-delay wins if larger
+  request_timeout: 30.0
+  retries: 3
+  include_subdomains: false # set true for docs.example.com + api.example.com
+  follow_sitemap: true
+
+  # Restrict the crawl to a subtree, e.g. only /docs/:
+  #   include_patterns: ["^https://example\\.com/docs/"]
+  include_patterns: []
+
+  # Added to the built-in asset/trap excludes rather than replacing them.
+  exclude_patterns: []
+
+# ── Phase 3 · content extraction ─────────────────────────────────────────────
+extractor:
+  favour_recall: true       # keep unusual <aside> notes rather than lose them
+  include_tables: true
+  include_formatting: true
+  include_links: false
+  min_extracted_chars: 200
+
+# ── Phase 4 · corpus cleaning ────────────────────────────────────────────────
+cleaner:
+  min_doc_chars: 300
+  min_doc_words: 50
+  enable_near_dedupe: true
+  simhash_threshold: 3      # Hamming distance over 64 bits; 3 is conservative
+  boilerplate_line_ratio: 0.35
+
+# ── Phase 5 · instruction dataset generation ─────────────────────────────────
+dataset:
+  provider:
+    # auto = probe ollama -> openai -> anthropic -> structural, use the first
+    # that responds. structural needs no LLM and always works.
+    backend: auto
+    ollama_base_url: "http://localhost:11434"
+    ollama_model: "qwen2.5:7b"
+    openai_model: "gpt-4o-mini"
+    anthropic_model: "claude-sonnet-5"
+    temperature: 0.7        # high on purpose: we want varied phrasings
+    concurrency: 4
+    max_retries: 3
+
+  sample_types:
+    - doc_qa
+    - summarization
+    - explanation
+    - step_by_step
+    - api_understanding
+    - code_explanation
+    - concept_learning
+    - troubleshooting
+
+  pairs_per_type: 2
+  max_chars_per_window: 6000
+  max_windows_per_doc: 8
+
+# ── Phase 6 · validation ─────────────────────────────────────────────────────
+validation:
+  min_answer_chars: 40
+  drop_duplicates: true
+  max_invalid_ratio: 0.5    # abort if the generator produced mostly garbage
+
+# ── Phase 7 · splitting ──────────────────────────────────────────────────────
+split:
+  train_ratio: 0.9
+  seed: 42
+  group_by_source: true     # no page's samples straddle train/val
+
+# ── Phase 8 · fine-tuning ────────────────────────────────────────────────────
+training:
+  # "auto" picks cuda_model on a CUDA box and cpu_model otherwise.
+  base_model: auto
+  cuda_model: "Qwen/Qwen2.5-7B-Instruct"
+  cpu_model: "Qwen/Qwen2.5-0.5B-Instruct"
+  device: auto
+
+  # 4-bit needs bitsandbytes + CUDA. Automatically disabled elsewhere.
+  load_in_4bit: true
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_use_double_quant: true
+
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+
+  num_train_epochs: 3.0
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  learning_rate: 2.0e-4
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  max_seq_length: 2048
+
+  gradient_checkpointing: true
+  train_on_completions_only: true
+  use_flash_attention: true
+
+  logging_steps: 10
+  save_steps: 100
+  eval_steps: 100
+  save_total_limit: 3
+  resume_from_checkpoint: true
+  seed: 42
+
+  # Smoke-run caps; 0 = unlimited.
+  max_steps: 0
+  max_train_samples: 0
+
+# ── Phase 9 · evaluation ─────────────────────────────────────────────────────
+evaluation:
+  compute_perplexity: true
+  num_sample_generations: 12
+  grounding_check: true
+  consistency_check: true
+
+# ── Phase 10 · export ────────────────────────────────────────────────────────
+export:
+  export_adapter: true
+  export_merged: true
+  export_gguf: false        # needs a local llama.cpp build
+  gguf_quantisation: Q4_K_M
+  llama_cpp_dir: "~/llama.cpp"
+  export_ollama: true
+
+# ── Phase 11 · benchmark ─────────────────────────────────────────────────────
+benchmark:
+  enabled: true
+  compare_with_base: true
+  num_questions: 20
+  source: validation        # held-out questions, so this measures generalisation
+
+# ── runtime ──────────────────────────────────────────────────────────────────
+runtime:
+  workspace: runs
+  run_name: auto            # derived from the domain
+  resume: true
+  log_level: INFO
+  progress: true
+  seed: 42
+  cache_ttl_hours: 0        # 0 = cached pages never expire
+  phases: []                # empty = run all twelve

@@ -1,0 +1,41 @@
+# Run artifacts are the largest thing in the tree and are never needed in
+# the image — they are regenerated inside the container.
+runs/
+*.gguf
+*.safetensors
+*.bin
+
+# Local environment
+.venv/
+venv/
+.cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tooling and VCS
+.git/
+.github/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Secrets must never be baked into a layer
+.env
+.env.*
+!.env.example
+
+# Scratch
+*.log
+e2e.log

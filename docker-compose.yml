@@ -1,0 +1,73 @@
+# =============================================================================
+# autotrain — compose profiles
+#
+#   docker compose run --rm autotrain https://example.com
+#   docker compose run --rm data https://example.com --skip-training
+#   docker compose --profile ollama up -d          # local generator backend
+#
+# The runs/ bind mount is the important one: it is where every artifact lands,
+# and it is what makes a run resumable across container restarts.
+# =============================================================================
+
+services:
+  # Full pipeline on a CUDA host.
+  autotrain:
+    build:
+      context: .
+      target: cuda
+    image: autotrain:cuda
+    volumes:
+      - ./runs:/work/runs
+      - ./configs:/work/configs:ro
+      - hf-cache:/work/.cache/huggingface
+    environment:
+      # Generation backend credentials, if you use a hosted one.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Point the Ollama backend at the sidecar below rather than localhost.
+      - AUTOTRAIN_SET=dataset.provider.ollama_base_url=http://ollama:11434
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Model loading maps large tensors; the default 64 MB /dev/shm is not enough.
+    shm_size: "2gb"
+
+  # Data phases only. No GPU, no torch, small image.
+  data:
+    build:
+      context: .
+      target: base
+    image: autotrain:data
+    volumes:
+      - ./runs:/work/runs
+      - ./configs:/work/configs:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - AUTOTRAIN_SET=dataset.provider.ollama_base_url=http://ollama:11434
+
+  # Optional local generator for phase 5, so dataset synthesis needs no API key.
+  # Pull a model once the container is up:
+  #   docker compose exec ollama ollama pull qwen2.5:7b
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  hf-cache:
+  ollama-models:

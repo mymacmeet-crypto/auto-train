@@ -1,0 +1,152 @@
+# =============================================================================
+# Example: a large documentation site on a single CUDA GPU.
+#
+#   autotrain https://docs.example.com --config configs/example-docs-site.yaml
+#
+# Tuned for the common case: 2,000-20,000 pages of technical documentation,
+# one 24-48 GB GPU, and an Ollama instance available for dataset generation.
+# =============================================================================
+
+crawler:
+  max_pages: 20000
+  max_depth: 15
+  concurrency: 12
+  # Half a second between requests to the same host. Slower than the site can
+  # serve, deliberately — an unthrottled 12-way crawl looks like an attack and
+  # gets the crawler blocked partway through, which is far more expensive than
+  # the delay.
+  delay_seconds: 0.5
+  respect_robots: true
+
+  # Documentation is usually spread across docs./api./developer. subdomains.
+  include_subdomains: true
+
+  # Restrict to the documentation tree, skipping blog/marketing/careers.
+  include_patterns:
+    - '^https://docs\.example\.com/'
+    - '^https://api\.example\.com/reference/'
+
+  exclude_patterns:
+    # Versioned archives multiply the corpus with near-identical copies. Keep
+    # /latest/ and let near-duplicate detection handle whatever slips through.
+    - '/v[0-9]+\.[0-9]+/'
+    - '/(?:archive|legacy|deprecated)/'
+    # Locale variants of the same English content.
+    - '/(?:de|fr|es|it|ja|ko|zh|pt|ru)(?:-[a-z]{2})?/'
+    # Generated API dumps: thousands of pages, near-zero prose.
+    - '/_modules/'
+    - '/genindex'
+    - '/searchindex'
+
+extractor:
+  favour_recall: true
+  include_tables: true
+  # Documentation cross-references are noise once the page is out of context.
+  include_links: false
+  min_extracted_chars: 300
+
+cleaner:
+  min_doc_chars: 400
+  min_doc_words: 70
+  enable_near_dedupe: true
+  # Slightly tighter than the default: versioned docs sites have many pages
+  # that are genuinely similar but not duplicates.
+  simhash_threshold: 2
+  # Large sites have more chrome variants, so require a line on more pages
+  # before calling it boilerplate.
+  boilerplate_line_ratio: 0.30
+
+dataset:
+  provider:
+    backend: ollama
+    ollama_model: "qwen2.5:7b"
+    # Local generation is throughput-bound on the GPU, not the network.
+    # Raise only if the Ollama host has headroom.
+    concurrency: 6
+    temperature: 0.7
+    timeout: 240
+
+  # All eight types; applicability gating decides which actually apply per page.
+  sample_types:
+    - doc_qa
+    - summarization
+    - explanation
+    - step_by_step
+    - api_understanding
+    - code_explanation
+    - concept_learning
+    - troubleshooting
+
+  pairs_per_type: 3
+  max_chars_per_window: 6000
+  max_windows_per_doc: 10
+
+validation:
+  min_answer_chars: 60
+  drop_duplicates: true
+  max_invalid_ratio: 0.4
+
+split:
+  train_ratio: 0.9
+  group_by_source: true
+
+training:
+  base_model: "Qwen/Qwen2.5-7B-Instruct"
+  device: cuda
+
+  load_in_4bit: true
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_compute_dtype: bfloat16
+
+  # r=32 for a large corpus: rank 16 underfits once the dataset passes roughly
+  # 20k samples, and the extra parameters cost little at 4-bit.
+  lora_r: 32
+  lora_alpha: 64
+  lora_dropout: 0.05
+
+  num_train_epochs: 2.0
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 8      # effective batch 32
+  learning_rate: 1.0e-4               # lower than default: bigger dataset, more steps
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  max_seq_length: 4096
+
+  gradient_checkpointing: true
+  bf16: true
+  use_flash_attention: true
+  train_on_completions_only: true
+
+  logging_steps: 20
+  save_steps: 250
+  eval_steps: 250
+  save_total_limit: 3
+  resume_from_checkpoint: true
+
+evaluation:
+  num_sample_generations: 25
+  grounding_check: true
+  consistency_check: true
+
+export:
+  export_adapter: true
+  export_merged: true
+  export_gguf: true
+  gguf_quantisation: Q4_K_M
+  llama_cpp_dir: "~/llama.cpp"
+  export_ollama: true
+
+benchmark:
+  enabled: true
+  compare_with_base: true
+  num_questions: 40
+
+runtime:
+  workspace: runs
+  resume: true
+  log_level: INFO
+  seed: 42
+  # Re-crawl anything older than a week on the next run, so an incremental
+  # update picks up changed pages without refetching the whole site.
+  cache_ttl_hours: 168

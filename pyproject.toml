@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autotrain"
+version = "0.1.0"
+description = "Autonomous website-to-fine-tuned-Qwen training pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# Core dependencies — everything needed for phases 1-7 (crawl -> split).
+# The training stack is a separate extra so the data pipeline stays installable
+# on machines with no GPU and no multi-gigabyte torch download.
+dependencies = [
+    "httpx[http2]>=0.27",
+    "lxml>=5.2",
+    "trafilatura>=1.12",
+    "beautifulsoup4>=4.12",
+    "pydantic>=2.7",
+    "PyYAML>=6.0",
+    "typer>=0.12",
+    "rich>=13.7",
+    "tenacity>=8.3",
+]
+
+[project.optional-dependencies]
+# Training stack. bitsandbytes is Linux+CUDA only; the trainer detects its
+# absence and falls back to a non-quantised LoRA path.
+train = [
+    "torch>=2.3",
+    "transformers>=4.44",
+    "peft>=0.12",
+    "trl>=0.10",
+    "accelerate>=0.33",
+    "datasets>=2.21",
+    "safetensors>=0.4",
+]
+cuda = [
+    "bitsandbytes>=0.43; platform_system=='Linux'",
+]
+eval = [
+    "rouge-score>=0.1.2",
+    "numpy>=1.26",
+]
+# Optional. When installed, the trainer detects it and writes live loss
+# curves to runs/<site>/training/tensorboard/.
+logging = [
+    "tensorboard>=2.17",
+    "psutil>=5.9",
+]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+]
+all = [
+    "autotrain[train,cuda,eval,logging,dev]",
+]
+
+[project.scripts]
+autotrain = "autotrain.cli.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
