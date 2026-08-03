@@ -42,7 +42,7 @@ from autotrain.crawler.urlnorm import (
 )
 from autotrain.utils.config import AutotrainConfig
 from autotrain.utils.logging import get_logger, make_progress
-from autotrain.utils.paths import Workspace
+from autotrain.utils.paths import Workspace, url_to_slug
 from autotrain.utils.text import sha256_text, write_json
 
 logger = get_logger("crawler")
@@ -335,7 +335,11 @@ class Crawler:
                 self.stats.skipped_duplicate_content += 1
             else:
                 self._content_hashes[content_hash] = index
-                target = self.ws.page_html(index)
+                page_url = result.final_url or url
+                slug = url_to_slug(page_url)
+                target = self.ws.raw_html / f"{slug}.html"
+                if target.exists():  # slug collision: append index as tie-breaker
+                    target = self.ws.raw_html / f"{slug}__{index}.html"
                 try:
                     target.write_text(result.html, encoding="utf-8")
                     html_path = str(target.relative_to(self.ws.root)).replace("\\", "/")

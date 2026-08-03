@@ -49,6 +49,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+
+def url_to_slug(url: str, max_length: int = 80) -> str:
+    """Turn a URL path into a safe, human-readable filename stem.
+
+    https://example.com/about/team/ -> about__team
+    https://example.com/            -> index
+    https://example.com/products/x  -> products__x
+    """
+    path = urlparse(url).path.strip("/")
+    if not path:
+        return "index"
+    parts = [re.sub(r"[^A-Za-z0-9._-]", "_", p).strip("._-") for p in path.split("/")]
+    parts = [p for p in parts if p]
+    slug = "__".join(parts) if parts else "index"
+    return slug[:max_length] or "index"
+
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 

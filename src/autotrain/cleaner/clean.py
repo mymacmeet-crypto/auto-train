@@ -440,7 +440,11 @@ def run_cleaning(cfg: AutotrainConfig, ws: Workspace) -> dict[str, Any]:
             doc.table_count = tables
             doc.content_hash = content_hash
 
-            out_path = ws.clean_md(doc.index)
+            from autotrain.utils.paths import url_to_slug
+            slug = url_to_slug(doc.url)
+            out_path = ws.clean_dataset_docs / f"{slug}.md"
+            if out_path.exists():
+                out_path = ws.clean_dataset_docs / f"{slug}__{doc.index}.md"
             out_path.write_text(text, encoding="utf-8")
             doc.md_path = str(out_path.relative_to(ws.root)).replace("\\", "/")
 

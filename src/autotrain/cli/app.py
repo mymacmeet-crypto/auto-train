@@ -61,6 +61,9 @@ def run(
     force: bool = typer.Option(
         False, "--force", "-f", help="Re-run phases even if their outputs already exist"
     ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the confirmation prompt before training starts"
+    ),
     no_resume: bool = typer.Option(False, "--no-resume", help="Ignore previous run state"),
     seed: Optional[int] = typer.Option(None, "--seed", help="Master seed for a reproducible run"),
     log_level: str = typer.Option("INFO", "--log-level", "-l", help="DEBUG, INFO, WARNING, ERROR"),
@@ -112,7 +115,7 @@ def run(
     from autotrain.pipeline import run_pipeline
 
     try:
-        result = run_pipeline(cfg, force=force, only=selected)
+        result = run_pipeline(cfg, force=force, only=selected, confirm=not yes)
     except KeyboardInterrupt:
         console().print("\n[yellow]interrupted[/yellow] — re-run the same command to resume")
         raise typer.Exit(code=130)

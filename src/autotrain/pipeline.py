@@ -181,13 +181,14 @@ def _torch_available() -> bool:
 
 class Pipeline:
     def __init__(self, cfg: AutotrainConfig, *, force: bool = False,
-                 only: list[str] | None = None) -> None:
+                 only: list[str] | None = None, confirm: bool = True) -> None:
         if not cfg.domain:
             raise ValueError("a domain is required")
 
         self.cfg = cfg
         self.force = force
         self.only = set(only) if only else None
+        self.confirm = confirm
 
         self.ws = make_workspace(cfg.runtime.workspace, cfg.domain, cfg.runtime.run_name)
         self.store = StateStore(self.ws.run_file)
@@ -195,6 +196,35 @@ class Pipeline:
         self.store.state.run_name = self.ws.root.name
         self.store.state.config_digest = sha256_text(cfg.model_dump_json())[:16]
         self.store.save()
+
+    def _confirm_training(self) -> bool:
+        from autotrain.utils.logging import console
+        from autotrain.utils.text import count_lines
+
+        train_count = count_lines(self.ws.train_jsonl)
+        val_count = count_lines(self.ws.val_jsonl)
+        tcfg = self.cfg.training
+
+        c = console()
+        c.print()
+        c.rule("[bold yellow]Ready to start training — please review[/bold yellow]")
+        c.print(f"  domain          : [cyan]{self.cfg.domain}[/cyan]")
+        c.print(f"  workspace       : {self.ws.root}")
+        c.print(f"  training samples: [green]{train_count:,}[/green]")
+        c.print(f"  eval samples    : [green]{val_count:,}[/green]")
+        c.print(f"  base model      : {tcfg.cuda_model} (CUDA) / {tcfg.cpu_model} (MPS/CPU)")
+        c.print(f"  LoRA            : r={tcfg.lora_r}  alpha={tcfg.lora_alpha}  "
+                f"dropout={tcfg.lora_dropout}  epochs={tcfg.num_train_epochs}")
+        c.print(f"  sequence length : {tcfg.max_seq_length}")
+        c.print()
+
+        try:
+            answer = input("  Proceed with training? [Y/n] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            c.print("\n[yellow]cancelled[/yellow]")
+            return False
+
+        return answer in ("", "y", "yes")
 
     def phases_to_run(self) -> list[PhaseDef]:
         selected = self.cfg.runtime.phases or []
@@ -231,6 +261,11 @@ class Pipeline:
                 logger.info(f"[{i}/{len(phases)}] {phase.title}: already complete, skipping")
                 results[phase.name] = self.store.state.phases[phase.name].summary
                 continue
+
+            if phase.name == "train" and self.confirm:
+                if not self._confirm_training():
+                    logger.info("training skipped by user — re-run the same command to start training")
+                    break
 
             if phase.needs_torch and not torch_ok:
                 message = (
@@ -347,6 +382,7 @@ class Pipeline:
 
 
 def run_pipeline(
-    cfg: AutotrainConfig, *, force: bool = False, only: list[str] | None = None
+    cfg: AutotrainConfig, *, force: bool = False, only: list[str] | None = None,
+    confirm: bool = True,
 ) -> dict[str, Any]:
-    return Pipeline(cfg, force=force, only=only).run()
+    return Pipeline(cfg, force=force, only=only, confirm=confirm).run()

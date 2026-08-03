@@ -35,7 +35,7 @@ from bs4 import BeautifulSoup, Tag
 from autotrain.extractor.markdown import html_to_markdown
 from autotrain.utils.config import AutotrainConfig
 from autotrain.utils.logging import get_logger, make_progress
-from autotrain.utils.paths import Workspace
+from autotrain.utils.paths import Workspace, url_to_slug
 from autotrain.utils.text import (
     normalize_text,
     read_jsonl,
@@ -368,7 +368,10 @@ def run_extraction(cfg: AutotrainConfig, ws: Workspace) -> dict[str, Any]:
                 continue
 
             headings, code_blocks, tables = _count_structures(markdown)
-            md_path = ws.page_md(index)
+            slug = url_to_slug(url)
+            md_path = ws.clean_docs / f"{slug}.md"
+            if md_path.exists():
+                md_path = ws.clean_docs / f"{slug}__{index}.md"
             md_path.write_text(markdown, encoding="utf-8")
 
             docs.append(
